@@ -37,8 +37,10 @@
 PSP_MODULE_INFO("Dynarec Test", 0, 0, 1);
 
 PSP_MAIN_THREAD_ATTR(PSP_THREAD_ATTR_USER | PSP_THREAD_ATTR_VFPU);
+//PSP_HEAP_SIZE_KB(-256);
 
 PSPDynarec _psp_dynarec;
+char temp[128];
 
 void WriteLog(char* msg)
 {
@@ -50,17 +52,19 @@ void WriteLog(char* msg)
 
 int main(int argc, char **argv) { 
   //addr dynarec 08900590  
-
   uint64_t returnValue = 0;
+
+  pspDebugScreenInitEx((void*)(0x44000000), PSP_DISPLAY_PIXEL_FORMAT_5551, 1);
   
-  _psp_dynarec.LoadValueToReg<_s1>(10);
-  _psp_dynarec.LoadValueToReg<_s2>(15);
-  _psp_dynarec.OP_R<_add>(_s5,_s1,_s2); 
+  _psp_dynarec.LoadValueToReg<_s1>(100);
+  _psp_dynarec.LoadValueToReg<_s2>(145);
+  _psp_dynarec.OP_R<_mul>(_s3,_s1,_s2); 
   _psp_dynarec.ExecuteBlock();
  
-  _psp_dynarec.GetValueFromReg(_s5,returnValue);
+  _psp_dynarec.GetValueFromReg(_s3,returnValue);
     
-  printf("\nValue %lld\n",returnValue);
+  //printf("\nValue %lld\n",returnValue);
+  pspDebugScreenPrintf("Value: %lld",returnValue);
 
   return 0;
 }
