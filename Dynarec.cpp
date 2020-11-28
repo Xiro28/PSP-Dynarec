@@ -6,54 +6,38 @@
 
 #include "Dynarec.h"
 
-void PSPDynarec::EmitBYTE(u8 byte)
+void PSPD_Fun::EmitBYTE(u8 byte)
 {
-    mips_code.code[mips_code.count++] = byte;
+    code[codePointer++] = byte;
 }
 
-void PSPDynarec::EmitWORD(u16 word)
+void PSPD_Fun::EmitWORD(u16 word)
 {
-    *(u16 *)(&mips_code.code[mips_code.count]) = word;
-    mips_code.count += 2;
+    *(u16 *)(&code[codePointer]) = word;
+    codePointer += 2;
 }
 
-void PSPDynarec::EmitDWORD(u32 dword)
+void PSPD_Fun::EmitDWORD(u32 dword)
 {
-    *(u32 *)(&mips_code.code[mips_code.count]) = dword;
-    mips_code.count += 4;
+    *(u32 *)(&code[codePointer]) = dword;
+    codePointer += 4;
 }
 
-u32 labelAddr = 0; 
-
-void PSPDynarec::InsertLabel(char* label)
-{
-    labelAddr = (u32)&mips_code.code[mips_code.count];
+void PSPD_Fun::Finalize(){
+    EmitDWORD(0x03e00008);
+    if (instructionPending != -1) EmitDWORD(instructionPending); 
+    _dynarec->count += codePointer+4;
 }
 
-void PSPDynarec::JumpToLabel(char* label)
-{
-    //printf("Label addr: %x\n",(u32)&mips_code.code[mips_code.count]);
-    EmitWORD(labelAddr);
-    mips_code.code[mips_code.count++] = 0;
-    mips_code.code[mips_code.count++] = 0b1100;
+void PSPD_Fun::Execute(){
+	sceKernelDcacheWritebackInvalidateAll();
+    asm volatile("jal %0": : "r" (code)); 
 }
 
-void PSPDynarec::ExecuteBlock(){
-
-    if(mips_code.count > 0)
-	{
-        //Finalize the block before the execution
-        EmitDWORD(0x03e00008); //j $ra
-
-		sceKernelDcacheWritebackInvalidateAll();
-        asm volatile("jal %0": : "r" (mips_code.code)); 
-	}
-}
 
 //DO NOT TEMPLATE THIS
 
 void PSPDynarec::GetValueFromReg(REG_MIPS reg,uint64_t &value){
-    unsigned int tmp;
     switch (reg){
         case _s0:
             register unsigned s0 asm ("s0"); 

@@ -39,8 +39,12 @@ PSP_MODULE_INFO("Dynarec Test", 0, 0, 1);
 PSP_MAIN_THREAD_ATTR(PSP_THREAD_ATTR_USER | PSP_THREAD_ATTR_VFPU);
 //PSP_HEAP_SIZE_KB(-256);
 
+int Function(){
+  printf("Ciao \n");
+  return 0;
+}
+
 PSPDynarec _psp_dynarec;
-char temp[128];
 
 void WriteLog(char* msg)
 {
@@ -52,19 +56,42 @@ void WriteLog(char* msg)
 
 int main(int argc, char **argv) { 
   //addr dynarec 08900590  
-  uint64_t returnValue = 0;
+  uint64_t returnValue = 10;
 
   pspDebugScreenInitEx((void*)(0x44000000), PSP_DISPLAY_PIXEL_FORMAT_5551, 1);
-  
-  _psp_dynarec.LoadValueToReg<_s1>(100);
-  _psp_dynarec.LoadValueToReg<_s2>(145);
-  _psp_dynarec.OP_R<_mul>(_s3,_s1,_s2); 
-  _psp_dynarec.ExecuteBlock();
  
+  _psp_dynarec.Init();
+  
+  PSPD_Fun fun1(&_psp_dynarec,0);
+  
+  fun1.OP_I<_li,_a0>(100);
+  fun1.OP_I<_li,_a1>(120);
+  fun1.OP_I<_li,_a2>(2);
+  fun1.OP_R<_add,_s3,_a0,_a1>();
+  fun1.OP_I<_mult,_s3,_a2>(); 
+  fun1.OP_I<_mflo,_s3>(); 
+
+  fun1.Finalize();
+
+  PSPD_Fun fun2(&_psp_dynarec,0);
+  
+  fun2.OP_I<_li,_a2>(2);
+  fun2.OP_I<_mult,_s3,_a2>(); 
+  fun2.OP_I<_mflo,_s3>(); 
+  fun1.OP_I<_li,_a1>(100);
+  fun2.OP_J<_jal>((int)&Function); 
+  
+  fun2.Finalize();
+  
+  fun1.Execute();
+  fun2.Execute();
+
   _psp_dynarec.GetValueFromReg(_s3,returnValue);
-    
+  
   //printf("\nValue %lld\n",returnValue);
   pspDebugScreenPrintf("Value: %lld",returnValue);
+
+  //_psp_dynarec.DeInit();
 
   return 0;
 }

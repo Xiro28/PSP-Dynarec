@@ -15,11 +15,21 @@ enum REG_MIPS{
     _t8, _t9
 };
 
-enum OPCodes{
-    _sll = 0b00000100,
-    _srl = 0b00000110,
+enum Type_J{
+    _j = 0b000010,
+    _jal = 0b000011,
+    _jr = 0b001000
+};
 
-    _mul = 0b0000010,
+enum Type_I{
+    _li  =  0b00100100,
+    _mfhi = 0b00010000,
+    _mflo = 0b00010010,
+
+    _mult = 0b00011000,
+};
+
+enum Type_R{
     _add = 0b00000100000,
     _sub = 0b00000100010,
     _div = 0b00000011010,
@@ -29,80 +39,139 @@ enum OPCodes{
     _xor = 0b00000100110,
     _not = 0b00000100111,
 
-      _j = 0b000010,
-    _jal = 0b000011,
-     _jr = 0b001000
-};
+    _sll = 0b00000000000,
+    _sllv = 0b00000000100,
 
-struct ASM_MIPS{
-        uint64_t  count;
-       __attribute__((aligned(64))) uint8_t * code;
+    _srl = 0b00000000010,
+    _srlv = 0b00000000110,
 };
 
 class PSPDynarec{
 
 private:
     int MAX_SZ = 7 * 1024 * 512; //3.5MB
-    ASM_MIPS mips_code;
+    __attribute__((aligned(64))) uint8_t * code;
 
 public:
-    PSPDynarec(){
-        int ret = sceKernelVolatileMemLock(0, reinterpret_cast<void**>(&mips_code.code), &MAX_SZ); 
-        mips_code.count = 0;
+    uint64_t  count;
 
-        memset(mips_code.code,0,MAX_SZ);
+    void Init(){
+        int ret = sceKernelVolatileMemLock(0, reinterpret_cast<void**>(&code), &MAX_SZ); 
+        count = 0;
+
+        memset(code,0,MAX_SZ);
 
         if (ret != 0) printf("Failed to allocate volatile mem ");
         else          printf("Volatile mem allocated correctly");
     }
 
-    void EmitBYTE(u8 byte);
-    void EmitWORD(u16 word);
-    void EmitDWORD(u32 dword);
+    void   GetValueFromReg(REG_MIPS reg,uint64_t &value);
 
-    void ExecuteBlock();
+    void*       GetMemPoint(uint64_t addr){ return &code[addr]; }  
+    uint64_t    GetMemPos(){ return count; } 
+    void        SetMemPos(uint64_t pos){ count = pos; }   
+};
 
-    template<REG_MIPS reg> void  LoadValueToReg(uint64_t  value);
-    void GetValueFromReg(REG_MIPS reg,uint64_t &value);
+class PSPD_Fun{
+    private:
+        PSPDynarec* _dynarec;
+        uint64_t  memPosition;
+        uint8_t* code;
+        uint16_t codePointer;
 
-    template<OPCodes _op> void OP_R(REG_MIPS reg1 = _zero, REG_MIPS reg2 = _zero, REG_MIPS reg3 = _zero);
-    template<OPCodes _op> void OP_I(REG_MIPS reg1 = _zero, REG_MIPS reg2 = _zero, uint64_t value = 0);
-    template<OPCodes _op> void OP_J(uint64_t addr);
+        bool writePending = false;
+        int instructionPending = -1;
 
-    void InsertLabel(char* label);
-    void JumpToLabel(char* label);
+        void EmitBYTE(u8 byte);
+        void EmitWORD(u16 word);
+        void EmitDWORD(u32 dword);
 
+    public:
+        //TODO Fix: This code will execute a nop as first operation. 
+        PSPD_Fun(PSPDynarec *dynarec,uint64_t addr){
+            memPosition =  addr;
+            code = reinterpret_cast<uint8_t*>(dynarec->GetMemPoint(dynarec->count)); 
+            codePointer = dynarec->GetMemPos()/8;
+            _dynarec = dynarec;
+        }
+
+        void PrintInstrCount();
+        void Finalize();
+        void Execute();
+        
+        template<Type_J _op>                                     void OP_J(int addr);
+
+        template<Type_I _op,REG_MIPS rs>                         void OP_I();
+        template<Type_I _op,REG_MIPS rs, REG_MIPS rt>            void OP_I();
+        template<Type_I _op,REG_MIPS rs>                         void OP_I(uint64_t value);
+        template<Type_I _op,REG_MIPS rs, REG_MIPS rt>            void OP_I(uint64_t value);
+
+        template<Type_R _op,REG_MIPS rs,REG_MIPS rd>             void OP_R(uint64_t value);
+        template<Type_R _op,REG_MIPS rs,REG_MIPS rd,REG_MIPS rt> void OP_R(); 
 };
 
 
-template<OPCodes _op> 
-void PSPDynarec::OP_R(REG_MIPS reg1,REG_MIPS reg2,REG_MIPS reg3)
+template<Type_R _op,REG_MIPS rs,REG_MIPS rd,REG_MIPS rt> 
+void PSPD_Fun::OP_R()
 {
      u32 instruction = _op;
-     instruction |= (int)reg1<<11;
-     instruction |= (int)reg2<<21;
-     instruction |= (int)reg3<<16;
-     EmitDWORD(instruction);     
+     instruction |= (int)rs<<11;
+     instruction |= (int)rd<<21;
+     instruction |= (int)rt<<16;
+     if (instructionPending != -1) EmitDWORD(instructionPending); 
+     instructionPending = instruction;   
 }
 
-template<OPCodes _op> 
-void PSPDynarec::OP_I(REG_MIPS reg1, REG_MIPS reg2, uint64_t value){
-
+template<Type_R _op,REG_MIPS rs,REG_MIPS rd> 
+void PSPD_Fun::OP_R(uint64_t value)
+{    
+    u32 instruction = _op;
+    instruction |= (int)rs<<11;
+    instruction |= (int)rd<<16;
+    instruction |= static_cast<uint8_t>(value<<21);
+    if (instructionPending != -1) EmitDWORD(instructionPending); 
+    instructionPending = instruction;
 }
 
-template<OPCodes _op> 
-void PSPDynarec::OP_J(uint64_t addr){
-
+template<Type_I _op,REG_MIPS rs, REG_MIPS rd> 
+void PSPD_Fun::OP_I(uint64_t value){
+     u32 instruction = _op;
+     instruction |= (int)rs<<21;
+     instruction |= (int)rd<<16;
+     EmitWORD(instruction);
+     EmitWORD(static_cast<uint16_t>(value));
 }
 
-template<REG_MIPS reg>
-void PSPDynarec::LoadValueToReg(uint64_t value){
+template<Type_I _op,REG_MIPS rs,REG_MIPS rd> 
+void PSPD_Fun::OP_I(){
+     u32 instruction = _op;
+     instruction |= (int)rs<<21;
+     instruction |= (int)rd<<16;
+      if (instructionPending != -1) EmitDWORD(instructionPending); 
+     instructionPending = instruction;
+}
+
+template<Type_I _op,REG_MIPS rs> 
+void PSPD_Fun::OP_I(uint64_t value){
     EmitWORD(static_cast<uint16_t>(value));
-    mips_code.code[mips_code.count++] = reg;
-    mips_code.code[mips_code.count++] = 0b100100;
+    EmitBYTE(rs);
+    EmitBYTE(_op);
 }
 
+template<Type_I _op,REG_MIPS rs> 
+void PSPD_Fun::OP_I(){
+    u32 instruction = _op;
+    instruction |= (int)rs<<11;
+    if (instructionPending != -1) EmitDWORD(instructionPending); 
+    instructionPending = instruction;
+}
 
-
+template<Type_J _op> 
+void PSPD_Fun::OP_J(int addr){
+    u32 instruction = (addr>>2);
+    instruction |= _op << 26;
+    EmitDWORD(instruction);
+    EmitDWORD(0); //Add a nop after the jump 0C900638
+}                                              
 
 #endif
