@@ -40,7 +40,7 @@ PSP_MAIN_THREAD_ATTR(PSP_THREAD_ATTR_USER | PSP_THREAD_ATTR_VFPU);
 //PSP_HEAP_SIZE_KB(-256);
 
 int Function(){
-  printf("Ciao \n");
+  pspDebugScreenPrintf("Hello from Dynarec!\n");
   return 0;
 }
 
@@ -79,7 +79,7 @@ int main(int argc, char **argv) {
   fun2.OP_I<_mult,_s3,_a2>(); 
   fun2.OP_I<_mflo,_s3>(); 
   fun1.OP_I<_li,_a1>(100);
-  fun2.OP_J<_jal>((int)&Function); 
+  fun2.OP_J<_j>((int)&Function); 
   
   fun2.Finalize();
   

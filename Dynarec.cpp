@@ -30,6 +30,8 @@ void PSPD_Fun::Finalize(){
 }
 
 void PSPD_Fun::Execute(){
+    if (codePointer == 0) return;
+    
 	sceKernelDcacheWritebackInvalidateAll();
     asm volatile("jal %0": : "r" (code)); 
 }
